@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo Urbano</title>
+    <!-- Tailwind CSS para el diseño -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome para los íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- React y Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        @keyframes slide-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slide-up { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        const initialCatalog = [
+          { id: "0103", name: "CACIQUE 500", pack: "CAJA 12UNID", price: 183.19, category: "Rones y Whiskys" },
+          { id: "0238", name: "POLAR PILSEN RETORNABLE", pack: "CAJA 36 UNID", price: 23.00, category: "Cervezas" },
+          { id: "0742", name: "HARINA PAN TRADICIONAL 1KL", pack: "BULTO 20 UNID", price: 34.45, category: "Víveres" },
+          { id: "0317", name: "COCA COLA 2000ML", pack: "CAJA 6 UNID", price: 9.27, category: "Bebidas y Gaseosas" },
+          { id: "0382", name: "CHEESETRIS XXL 450GR", pack: "RISTRA 6 UND", price: 36.82, category: "Snacks y Dulces" }
+        ];
+
+        const categories = ["Todos", "Rones y Whiskys", "Cervezas", "Víveres", "Bebidas y Gaseosas", "Snacks y Dulces"];
+
+        function App() {
+          const [catalog, setCatalog] = useState(initialCatalog);
+          const [searchTerm, setSearchTerm] = useState("");
+          const [activeCategory, setActiveCategory] = useState("Todos");
+          const [cart, setCart] = useState([]);
+          const [activeView, setActiveView] = useState("catalog"); 
+          const [sellerName, setSellerName] = useState("Carlos Vendedor");
+          const [exchangeRate, setExchangeRate] = useState(45.20);
+          const [clientInfo, setClientInfo] = useState({ name: "", address: "" });
+          const [editingProduct, setEditingProduct] = useState(null);
+          const [newPriceInput, setNewPriceInput] = useState("");
+
+          const filteredProducts = useMemo(() => {
+            return catalog.filter(product => {
+              const searchStr = searchTerm.toLowerCase();
+              const matchesSearch = product.name.toLowerCase().includes(searchStr) || product.id.includes(searchTerm);
+              const matchesCategory = activeCategory === "Todos" || product.category === activeCategory;
+              return matchesSearch && matchesCategory;
+            });
+          }, [searchTerm, activeCategory, catalog]);
+
+          const addToCart = (product) => {
+            setCart(prev => {
+              const exists = prev.find(item => item.product.id === product.id);
+              if (exists) {
+                return prev.map(item => item.product.id === product.id ? { ...item, qty: item.qty + 1 } : item);
+              }
+              return [...prev, { product, qty: 1 }];
+            });
+          };
+
+          const updateQty = (id, delta) => {
+            setCart(prev => prev.map(item => {
+              if (item.product.id === id) {
+                const newQty = item.qty + delta;
+                return newQty > 0 ? { ...item, qty: newQty } : item;
+              }
+              return item;
+            }).filter(item => item.qty > 0));
+          };
+
+          const clearCart = () => {
+            if(window.confirm("¿Vaciar todo el pedido actual?")) {
+              setCart([]);
+              setClientInfo({ name: "", address: "" });
+              setActiveView("catalog");
+            }
+          };
+
+          const saveNewPrice = () => {
+            const parsedPrice = parseFloat(newPriceInput);
+            if (isNaN(parsedPrice) || parsedPrice < 0) {
+              alert("Por favor ingresa un precio válido.");
+              return;
+            }
+            setCatalog(prev => prev.map(p => p.id === editingProduct.id ? { ...p, price: parsedPrice } : p));
+            setCart(prev => prev.map(item => {
+              if(item.product.id === editingProduct.id) {
+                return { ...item, product: { ...item.product, price: parsedPrice }};
+              }
+              return item;
+            }));
+            setEditingProduct(null);
+          };
+
+          const totalUSD = cart.reduce((sum, item) => sum + (item.product.price * item.qty), 0);
+          const totalBS = totalUSD * exchangeRate;
+          const totalItems = cart.reduce((sum, item) => sum + item.qty, 0);
+
+          const sendToDispatch = () => {
+            if (cart.length === 0) return;
+            if (!clientInfo.name) {
+              alert("Por favor ingresa el nombre del cliente primero.");
+              setActiveView("cart");
+              return;
+            }
+            let text = `📦 *ORDEN DE DESPACHO*%0A%0A👤 *Vendedor:* ${sellerName}%0A🏢 *Cliente:* ${clientInfo.name}%0A`;
+            if(clientInfo.address) text += `📍 *Dirección:* ${clientInfo.address}%0A`;
+            text += `------------------------%0A`;
+            cart.forEach(item => {
+              text += `[${item.qty}] x COD:${item.product.id} - ${item.product.name}%0A`;
+            });
+            text += `------------------------%0A💰 *TOTAL: $${totalUSD.toFixed(2)}*%0A`;
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+          };
+
+          const sendToClient = () => {
+            if (cart.length === 0) return;
+            let text = `🧾 *COTIZACIÓN / PEDIDO*%0A🏢 *Cliente:* ${clientInfo.name || 'Estimado Cliente'}%0A📅 *Fecha:* ${new Date().toLocaleDateString()}%0A%0A`;
+            cart.forEach(item => {
+              const itemTotalUSD = (item.product.price * item.qty);
+              text += `▪️ *${item.product.name}* (${item.product.pack})%0A   ${item.qty} x $${item.product.price.toFixed(2)} = *$${itemTotalUSD.toFixed(2)}*%0A`;
+            });
+            text += `%0A══════════════════%0A💵 *TOTAL USD:* $${totalUSD.toFixed(2)}%0A🇻🇪 *TOTAL BS:* Bs. ${totalBS.toFixed(2)}%0A_(Tasa referencial: Bs. ${exchangeRate.toFixed(2)})_%0A══════════════════%0A%0A🤝 *Atendido por: ${sellerName}*%0A¡Gracias por su preferencia!`;
+            window.open(`https://wa.me/?text=${text}`, '_blank');
+          };
+
+          return (
+            <div className="font-sans text-slate-800 pb-24 relative max-w-lg mx-auto bg-slate-50 min-h-screen shadow-xl">
+              <div className="bg-amber-400 text-amber-900 px-4 py-1.5 text-[10px] font-black text-center flex items-center justify-center tracking-widest uppercase">
+                <i className="fa-solid fa-bolt mr-2"></i> DEMO: Mostrando 5 de +500 productos
+              </div>
+
+              <header className="bg-slate-900 text-white sticky top-0 z-20 shadow-lg border-b border-emerald-900">
+                <div className="px-4 py-3 flex justify-between items-center">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="bg-emerald-500 text-white p-2 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                      <i className="fa-solid fa-box text-lg"></i>
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-black leading-tight tracking-tight">URBANO</h1>
+                      <div className="text-[10px] text-emerald-300 font-bold tracking-wider uppercase flex items-center mt-0.5">
+                        <i className="fa-solid fa-user mr-1 text-[8px]"></i> {sellerName || "Vendedor"}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-3 items-center">
+                    <div onClick={() => setActiveView("settings")} className="bg-slate-800 border border-slate-700 px-2 py-1 rounded cursor-pointer hover:bg-slate-700 transition">
+                      <div className="text-[9px] text-slate-400 uppercase font-bold leading-none">Tasa BCV</div>
+                      <div className="text-xs font-bold text-emerald-400 leading-none mt-0.5">Bs {exchangeRate.toFixed(2)}</div>
+                    </div>
+                    <button onClick={() => setActiveView("cart")} className={`relative p-2 rounded-full transition ${activeView === 'cart' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
+                      <i className="fa-solid fa-cart-shopping text-lg"></i>
+                      {totalItems > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-900">
+                          {totalItems}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {activeView === "catalog" && (
+                  <div className="px-4 pb-3 pt-1">
+                    <div className="relative">
+                      <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm"></i>
+                      <input type="text" placeholder="Buscar código o producto..." className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800 border-none text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                      {searchTerm && (
+                        <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white">
+                          <i className="fa-solid fa-xmark"></i>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {activeView === "catalog" && (
+                  <div className="flex overflow-x-auto hide-scrollbar px-4 pb-3 space-x-2">
+                    {categories.map(cat => (
+                      <button key={cat} onClick={() => setActiveCategory(cat)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition border ${activeCategory === cat ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </header>
+
+              {activeView === "catalog" && (
+                <main className="p-4">
+                  <div className="mb-3 text-xs uppercase tracking-wider text-slate-500 font-bold flex items-center">
+                    Mostrando resultados ({filteredProducts.length})
+                  </div>
+                  <div className="space-y-3">
+                    {filteredProducts.map(product => {
+                      const qtyInCart = cart.find(item => item.product.id === product.id)?.qty || 0;
+                      return (
+                        <div key={product.id} className={`bg-white p-3.5 rounded-2xl shadow-sm border transition flex justify-between items-center ${qtyInCart > 0 ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-200'}`}>
+                          <div className="flex-1 pr-3">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-1.5 py-0.5 rounded border border-slate-200">CÓD: {product.id}</span>
+                            </div>
+                            <h3 className="font-bold text-slate-900 text-[15px] leading-tight mb-0.5">{product.name}</h3>
+                            <div className="text-[11px] text-slate-500 font-medium mb-1.5 flex items-center">
+                               <i className="fa-solid fa-box mr-1 opacity-70"></i> {product.pack}
+                            </div>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <div className="flex items-center bg-slate-50 pr-2 py-0.5 rounded-md border border-slate-200">
+                                <button onClick={() => { setEditingProduct(product); setNewPriceInput(product.price.toString()); }} className="p-1 text-slate-400 hover:text-emerald-600 transition ml-1">
+                                  <i className="fa-solid fa-pen-to-square text-xs"></i>
+                                </button>
+                                <span className="text-lg font-black text-emerald-600">${product.price.toFixed(2)}</span>
+                              </div>
+                              <span className="text-[11px] font-bold text-slate-400">Bs {(product.price * exchangeRate).toFixed(2)}</span>
+                            </div>
+                          </div>
+                          
+                          {qtyInCart === 0 ? (
+                            <button onClick={() => addToCart(product)} className="bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 h-12 w-12 rounded-xl flex items-center justify-center transition shadow-sm border border-slate-200 shrink-0">
+                              <i className="fa-solid fa-plus text-xl"></i>
+                            </button>
+                          ) : (
+                            <div className="flex flex-col items-center bg-emerald-50 rounded-xl border border-emerald-200 shrink-0 overflow-hidden shadow-sm">
+                              <button onClick={() => updateQty(product.id, 1)} className="w-12 h-8 flex items-center justify-center text-emerald-700 hover:bg-emerald-100 transition"><i className="fa-solid fa-plus text-sm"></i></button>
+                              <div className="w-12 py-0.5 bg-white text-center font-bold text-emerald-800 border-y border-emerald-100 text-sm">{qtyInCart}</div>
+                              <button onClick={() => updateQty(product.id, -1)} className="w-12 h-8 flex items-center justify-center text-emerald-700 hover:bg-emerald-100 transition"><i className="fa-solid fa-minus text-sm"></i></button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </main>
+              )}
+
+              {activeView === "cart" && (
+                <main className="p-4 pb-32">
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mb-4">
+                    <h2 className="text-sm font-bold text-slate-800 flex items-center mb-3">
+                      <i className="fa-solid fa-user mr-2 text-emerald-600"></i> Datos del Cliente
+                    </h2>
+                    <div className="space-y-3">
+                      <input type="text" placeholder="Nombre del Negocio / Cliente *" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium" value={clientInfo.name} onChange={e => setClientInfo({...clientInfo, name: e.target.value})} />
+                      <input type="text" placeholder="Dirección o Referencia de entrega" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={clientInfo.address} onChange={e => setClientInfo({...clientInfo, address: e.target.value})} />
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-4">
+                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                      <h2 className="text-sm font-bold text-slate-800 flex items-center">
+                        <i className="fa-solid fa-cart-shopping mr-2 text-emerald-600"></i> Resumen del Pedido
+                      </h2>
+                      {cart.length > 0 && <button onClick={clearCart} className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-1 rounded">Vaciar</button>}
+                    </div>
+                    <div className="p-2">
+                      {cart.length === 0 ? (
+                        <div className="py-8 text-center text-slate-400 text-sm">Cotización vacía.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {cart.map(item => (
+                            <div key={item.product.id} className="p-2 border border-slate-100 rounded-lg flex justify-between items-center">
+                              <div className="flex-1 pr-2">
+                                <p className="font-bold text-xs text-slate-800">{item.product.name}</p>
+                                <p className="text-[10px] text-slate-500">{item.product.pack} • ${item.product.price.toFixed(2)}</p>
+                              </div>
+                              <div className="text-right mr-3">
+                                <p className="font-black text-sm text-emerald-600">${(item.product.price * item.qty).toFixed(2)}</p>
+                              </div>
+                              <div className="flex items-center space-x-1 bg-slate-50 rounded-md border border-slate-200">
+                                <button onClick={() => updateQty(item.product.id, -1)} className="p-1.5 text-slate-600"><i className="fa-solid fa-minus text-[10px]"></i></button>
+                                <span className="font-bold text-slate-900 text-xs w-4 text-center">{item.qty}</span>
+                                <button onClick={() => updateQty(item.product.id, 1)} className="p-1.5 text-emerald-600"><i className="fa-solid fa-plus text-[10px]"></i></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {cart.length > 0 && (
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">Subtotal USD</span>
+                        <span className="text-xl font-black text-emerald-600">${totalUSD.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-5 pb-4 border-b border-slate-100">
+                        <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">Total Bolívares</span>
+                        <span className="text-lg font-black text-slate-800">Bs. {totalBS.toFixed(2)}</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={sendToDispatch} className="bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-3 flex flex-col items-center justify-center transition active:scale-95 shadow-md">
+                          <i className="fa-solid fa-truck text-lg mb-1 text-slate-300"></i>
+                          <span className="text-xs font-bold text-center leading-tight">Ticket a<br/>Despacho</span>
+                        </button>
+                        <button onClick={sendToClient} className="bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl py-3 flex flex-col items-center justify-center transition active:scale-95 shadow-md">
+                          <i className="fa-solid fa-paper-plane text-lg mb-1"></i>
+                          <span className="text-xs font-bold text-center leading-tight">Enviar Recibo<br/>al Cliente</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </main>
+              )}
+
+              {activeView === "settings" && (
+                <main className="p-4">
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center space-x-3 mb-6 pb-4 border-b border-slate-100">
+                      <div className="bg-slate-100 p-3 rounded-full text-slate-600">
+                        <i className="fa-solid fa-gear text-xl"></i>
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-slate-800">Configuración</h2>
+                        <p className="text-xs text-slate-500">Ajusta tus preferencias de venta</p>
+                      </div>
+                    </div>
+
+                    <div className="mb-6">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Nombre del Vendedor</label>
+                      <div className="relative">
+                        <i className="fa-solid fa-certificate absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-500"></i>
+                        <input type="text" className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={sellerName} onChange={(e) => setSellerName(e.target.value)} placeholder="Ej. Carlos Pérez" />
+                      </div>
+                    </div>
+
+                    <div className="mb-8">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Tasa de Cambio (BCV)</label>
+                      <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl p-2 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition">
+                        <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+                          <i className="fa-solid fa-dollar-sign"></i>
+                        </div>
+                        <span className="text-slate-500 font-bold ml-1">Bs.</span>
+                        <input type="number" step="0.01" className="w-full bg-transparent text-xl font-black text-slate-800 focus:outline-none" value={exchangeRate} onChange={e => setExchangeRate(parseFloat(e.target.value) || 0)} />
+                      </div>
+                    </div>
+                    
+                    <button onClick={() => setActiveView("catalog")} className="w-full bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-slate-800 active:scale-95 transition text-sm flex justify-center items-center">
+                      <i className="fa-solid fa-bolt mr-2 text-emerald-400"></i> Guardar y volver
+                    </button>
+                  </div>
+                </main>
+              )}
+
+              {editingProduct && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-slide-up">
+                    <div className="bg-slate-50 p-4 border-b border-slate-100 flex justify-between items-center">
+                      <h3 className="font-bold text-slate-800 flex items-center text-sm">
+                        <i className="fa-solid fa-pen-to-square mr-2 text-emerald-600"></i> Actualizar Precio
+                      </h3>
+                      <button onClick={() => setEditingProduct(null)} className="text-slate-400 hover:text-slate-800"><i className="fa-solid fa-xmark text-lg"></i></button>
+                    </div>
+                    <div className="p-5">
+                      <p className="font-bold text-slate-900 mb-1">{editingProduct.name}</p>
+                      <p className="text-xs text-slate-500 mb-4">CÓD: {editingProduct.id} • {editingProduct.pack}</p>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Nuevo Precio ($ USD)</label>
+                      <div className="relative">
+                        <i className="fa-solid fa-dollar-sign absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                        <input type="number" step="0.01" className="w-full pl-8 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-lg font-black text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" value={newPriceInput} onChange={(e) => setNewPriceInput(e.target.value)} autoFocus />
+                      </div>
+                    </div>
+                    <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-3">
+                      <button onClick={() => setEditingProduct(null)} className="py-2.5 font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 text-sm">Cancelar</button>
+                      <button onClick={saveNewPrice} className="py-2.5 font-bold text-white bg-emerald-600 rounded-xl shadow-md hover:bg-emerald-700 active:scale-95 text-sm">Guardar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeView !== "catalog" && (
+                <div className="fixed bottom-6 left-0 right-0 px-4 z-20 pointer-events-none">
+                  <div className="max-w-lg mx-auto pointer-events-auto">
+                    <button onClick={() => setActiveView("catalog")} className="w-full bg-slate-900 text-white rounded-xl shadow-xl flex items-center justify-center p-3.5 active:scale-95 transition-transform">
+                      <i className="fa-solid fa-magnifying-glass mr-2 text-slate-400"></i> <span className="font-bold text-sm">Volver al Catálogo</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeView === "catalog" && totalItems > 0 && (
+                <div className="fixed bottom-6 left-0 right-0 px-4 z-10 pointer-events-none">
+                  <div className="max-w-lg mx-auto pointer-events-auto">
+                    <button onClick={() => setActiveView("cart")} className="w-full bg-emerald-600 text-white rounded-xl shadow-xl shadow-emerald-200/50 flex items-center justify-between p-4 active:scale-95 transition-transform">
+                      <div className="flex items-center space-x-3">
+                        <div className="bg-emerald-800 rounded-full w-8 h-8 flex items-center justify-center font-bold text-sm shadow-inner">{totalItems}</div>
+                        <span className="font-bold text-sm">Procesar Pedido</span>
+                      </div>
+                      <span className="text-xl font-black">${totalUSD.toFixed(2)}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
