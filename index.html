@@ -18,6 +18,10 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Librería SheetJS para leer Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <style>
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -29,7 +33,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         // =====================================================================
         // 🛑 CONFIGURACIÓN DE FIREBASE (PROYECTO: FREELANCE) 🛑
@@ -69,7 +73,7 @@
                     if (doc.exists) setConfig(prev => ({ ...prev, ...doc.data() }));
                 });
 
-                // Carga de productos (Sin borrar por defecto)
+                // Carga de productos
                 const unsubscribeProducts = db.collection('products').orderBy('name').onSnapshot(snapshot => {
                     const items = [];
                     snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
@@ -147,9 +151,6 @@
 
             const totalUSD = cart.reduce((sum, item) => sum + (item.product.price * item.qty), 0);
 
-            // ========================================================
-            // WHATSAPP TICKET - DISEÑO ORDENADO Y LIMPIO
-            // ========================================================
             const sendWhatsApp = () => {
                 if (!customerInfo.name) return alert("Ingresa el nombre de tu negocio.");
                 if (!config.whatsapp) return alert("Número de WhatsApp no configurado.");
@@ -200,17 +201,28 @@
 
                         {view === "catalog" && (
                             <>
-                                <div className="px-5 pb-3">
+                                <div className="px-5 pb-4">
                                     <div className="relative">
                                         <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-sm"></i>
-                                        <input type="text" placeholder="Buscar por código o nombre..." className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-blue-500 text-sm placeholder-slate-500 transition" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                        <input type="text" placeholder="Buscar por código o nombre..." className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:border-blue-500 text-sm placeholder-slate-500 transition shadow-inner" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                     </div>
                                 </div>
                                 
-                                <div className="bg-slate-800 border-t border-slate-700 overflow-x-auto hide-scrollbar flex whitespace-nowrap px-4 py-2 space-x-2">
-                                    {categories.map(cat => (
-                                        <button key={cat} onClick={() => setSelectedCategory(cat)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${selectedCategory === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>{cat}</button>
-                                    ))}
+                                {/* MENÚ DESPLEGABLE DE CATEGORÍAS */}
+                                <div className="bg-slate-800 border-t border-slate-700 px-5 py-3 flex items-center justify-between">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center"><i className="fa-solid fa-layer-group mr-2 text-blue-500"></i> Sección</span>
+                                    <div className="relative w-2/3">
+                                        <select 
+                                            value={selectedCategory} 
+                                            onChange={e => setSelectedCategory(e.target.value)} 
+                                            className="w-full appearance-none bg-slate-700 border border-slate-600 text-white text-xs font-bold rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:border-blue-500 transition shadow-sm cursor-pointer truncate"
+                                        >
+                                            {categories.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+                                        <i className="fa-solid fa-chevron-down absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
+                                    </div>
                                 </div>
                             </>
                         )}
@@ -370,85 +382,133 @@
         // VISTA: PANEL DE ADMINISTRADOR (MULTI-MODO)
         // ==========================================
         function AdminPanel({ setView, products, config, setConfig, user }) {
-            // Protección estricta: si no hay sesión validada, expulsa al login.
             useEffect(() => {
                 if (!user) setView("login");
             }, [user, setView]);
 
             const [localConfig, setLocalConfig] = useState(config);
-            const [bulkText, setBulkText] = useState("");
-            const [uploadMode, setUploadMode] = useState("APPEND"); // "APPEND" o "REPLACE"
+            const [uploadMode, setUploadMode] = useState("APPEND"); 
             const [isUploading, setIsUploading] = useState(false);
             
-            // Nuevos estados para pestañas, busqueda y carga manual
+            // Archivo Excel
+            const [selectedFile, setSelectedFile] = useState(null);
+            const fileInputRef = useRef(null);
+
             const [adminTab, setAdminTab] = useState("SETTINGS"); 
-            const [manualProd, setManualProd] = useState({ code: '', name: '', category: '', pack: 'UNIDAD', price: '' });
+            const [manualProd, setManualProd] = useState({ code: '', name: '', category: '', price: '' });
             const [adminSearch, setAdminSearch] = useState("");
 
             const saveConfig = () => {
                 db.collection('config').doc('general').update(localConfig).then(() => alert("Ajustes guardados."));
             };
 
-            const handleBulkUpload = async () => {
-                if (!bulkText.trim()) return alert("Pega los datos del Excel primero.");
-                
-                const lines = bulkText.trim().split('\n');
-                const parsed = [];
-                for(let line of lines) {
-                    const cols = line.split('\t');
-                    if(cols.length >= 3) {
-                        const code = cols[0].trim();
-                        // Lógica flexible de columnas
-                        const cat = cols.length >= 5 ? cols[1].trim() : "VARIOS";
-                        const name = cols.length >= 5 ? cols[2].trim() : cols[1].trim();
-                        const pack = cols.length >= 5 ? cols[3].trim() : (cols.length === 4 ? cols[2].trim() : "UNIDAD");
-                        const price = parseFloat(String(cols[cols.length-1]).replace(',', '.').replace(/[^0-9.-]+/g,""));
-                        
-                        if(!isNaN(price)) {
-                            parsed.push({ code, category: cat, name, pack, price });
-                        }
-                    }
-                }
-
-                if(parsed.length === 0) return alert("No se detectó el formato. Copia al menos 3 columnas (Código, Nombre, Precio).");
-
-                if(!confirm(`⚠️ Modo: ${uploadMode === 'REPLACE' ? 'REEMPLAZAR TODO' : 'AGREGAR/ACTUALIZAR'}\n¿Deseas procesar ${parsed.length} productos?`)) return;
+            // 🛑 ALGORITMO ROBUSTO Y SECUENCIAL DE CARGA 🛑
+            const handleExcelUpload = () => {
+                if (!selectedFile) return alert("Por favor, selecciona un archivo Excel primero.");
 
                 setIsUploading(true);
-                try {
-                    if (uploadMode === "REPLACE") {
-                        // Borrado masivo
-                        const snapshot = await db.collection('products').get();
-                        const deleteBatches = [];
+                const reader = new FileReader();
+
+                reader.onload = async (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        
+                        // defval: "" Evita que las filas con celdas vacías al final se recorten
+                        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                        const parsedProducts = [];
+
+                        for (let i = 0; i < rows.length; i++) {
+                            const row = rows[i];
+                            
+                            // Si la fila está 100% vacía, saltarla
+                            if (row.every(cell => String(cell).trim() === '')) continue;
+
+                            // Formato EXACTO: 0=CÓDIGO, 1=DESCRIPCIÓN, 2=CATEGORÍA, 3=PRECIO
+                            let rawCode = String(row[0] || '').trim();
+                            
+                            // Saltar el encabezado (si existe)
+                            if (i === 0 && (rawCode.toUpperCase() === 'CODIGO' || rawCode.toUpperCase() === 'CÓDIGO' || rawCode.toUpperCase() === 'COD')) {
+                                continue;
+                            }
+                            
+                            if (!rawCode) continue; // Un producto DEBE tener código para existir
+
+                            let code = rawCode.padStart(4, '0');
+                            let name = String(row[1] || '').trim();           // COLUMNA 2: Descripción
+                            let category = String(row[2] || '').trim().toUpperCase() || 'VARIOS'; // COLUMNA 3: Categoría
+                            let priceRaw = row[3];                            // COLUMNA 4: Precio
+                            let pack = "UNIDAD";
+
+                            // Procesar precio para evitar fallos por texto o formatos extraños
+                            let price = typeof priceRaw === 'number' 
+                                        ? priceRaw 
+                                        : parseFloat(String(priceRaw).replace(',', '.').replace(/[^0-9.-]+/g, ""));
+                            
+                            if (isNaN(price)) price = 0;
+
+                            // Guardar solo si tiene nombre y código
+                            if (code && name) {
+                                parsedProducts.push({ code, category, name, pack, price });
+                            }
+                        }
+
+                        if (parsedProducts.length === 0) {
+                            setIsUploading(false);
+                            return alert("El archivo está vacío o no coincide con el formato. Verifica las columnas: 1.CÓDIGO, 2.DESCRIPCIÓN, 3.CATEGORÍA, 4.PRECIO.");
+                        }
+
+                        if(!window.confirm(`⚠️ Modo: ${uploadMode === 'REPLACE' ? 'REEMPLAZAR TODO' : 'AGREGAR/ACTUALIZAR'}\nSe detectaron ${parsedProducts.length} productos listos para procesar. ¿Continuar?`)) {
+                            setIsUploading(false);
+                            return;
+                        }
+
+                        // Lógica de guardado SECUENCIAL en Firebase para evitar saturar la base de datos
+                        if (uploadMode === "REPLACE") {
+                            const snapshot = await db.collection('products').get();
+                            let batch = db.batch();
+                            let count = 0;
+                            for (let doc of snapshot.docs) {
+                                batch.delete(doc.ref);
+                                count++;
+                                if (count === 450) { 
+                                    await batch.commit(); 
+                                    batch = db.batch(); 
+                                    count = 0; 
+                                }
+                            }
+                            if (count > 0) await batch.commit();
+                        }
+
+                        // Subir nuevos productos
                         let batch = db.batch();
                         let count = 0;
-                        snapshot.docs.forEach(doc => {
-                            batch.delete(doc.ref);
+                        for (let p of parsedProducts) {
+                            const docRef = db.collection('products').doc(p.code);
+                            batch.set(docRef, { ...p, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
                             count++;
-                            if (count === 450) { deleteBatches.push(batch.commit()); batch = db.batch(); count = 0; }
-                        });
-                        deleteBatches.push(batch.commit());
-                        await Promise.all(deleteBatches);
+                            if (count === 450) { 
+                                await batch.commit(); 
+                                batch = db.batch(); 
+                                count = 0; 
+                            }
+                        }
+                        if (count > 0) await batch.commit();
+
+                        alert(`✅ ¡Carga Exitosa! Todos los ${parsedProducts.length} productos están ahora en tu catálogo.`);
+                        setSelectedFile(null);
+                        if(fileInputRef.current) fileInputRef.current.value = "";
+
+                    } catch (error) {
+                        console.error("Error procesando excel:", error);
+                        alert("Hubo un error al procesar el archivo. Asegúrate de que sea un .xlsx válido y no esté dañado.");
                     }
+                    setIsUploading(false);
+                };
 
-                    // Carga / Actualización
-                    // Usamos el CÓDIGO como ID del documento para que se sobrescriba automáticamente si ya existe
-                    const uploadBatches = [];
-                    let batch = db.batch();
-                    let count = 0;
-                    parsed.forEach(p => {
-                        const docRef = db.collection('products').doc(p.code); // EL CÓDIGO ES EL ID
-                        batch.set(docRef, { ...p, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-                        count++;
-                        if (count === 450) { uploadBatches.push(batch.commit()); batch = db.batch(); count = 0; }
-                    });
-                    uploadBatches.push(batch.commit());
-                    await Promise.all(uploadBatches);
-
-                    alert(`✅ Catálogo actualizado: ${parsed.length} productos procesados.`);
-                    setBulkText("");
-                } catch(e) { console.error(e); alert("Error en la carga."); }
-                setIsUploading(false);
+                reader.readAsArrayBuffer(selectedFile);
             };
 
             const handleManualSubmit = async (e) => {
@@ -456,16 +516,18 @@
                 if(!manualProd.code || !manualProd.name || !manualProd.price) return alert("Código, Nombre y Precio son obligatorios.");
                 setIsUploading(true);
                 try {
-                    await db.collection('products').doc(manualProd.code).set({
-                        code: manualProd.code,
+                    const paddedCode = String(manualProd.code).trim().padStart(4, '0'); // <-- Rellena con ceros a la izquierda
+
+                    await db.collection('products').doc(paddedCode).set({
+                        code: paddedCode,
                         name: manualProd.name,
-                        category: manualProd.category || 'VARIOS',
-                        pack: manualProd.pack || 'UNIDAD',
+                        category: (manualProd.category || 'VARIOS').toUpperCase(),
+                        pack: 'UNIDAD', // Hardcoded ya que no se usa
                         price: parseFloat(manualProd.price),
                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });
                     alert("Producto guardado exitosamente.");
-                    setManualProd({ code: '', name: '', category: '', pack: 'UNIDAD', price: '' });
+                    setManualProd({ code: '', name: '', category: '', price: '' });
                 } catch(err) { console.error(err); alert("Error al guardar el producto."); }
                 setIsUploading(false);
             };
@@ -528,11 +590,11 @@
                                 <div className="space-y-3">
                                     <div className="flex space-x-3">
                                         <div className="w-1/3">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase">Código *</label>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase">Cód *</label>
                                             <input type="text" required className="w-full p-2.5 mt-1 bg-slate-50 rounded-xl border border-slate-200 font-mono text-xs" value={manualProd.code} onChange={e => setManualProd({...manualProd, code: e.target.value})} />
                                         </div>
                                         <div className="flex-1">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase">Nombre *</label>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase">Descripción *</label>
                                             <input type="text" required className="w-full p-2.5 mt-1 bg-slate-50 rounded-xl border border-slate-200 font-bold text-sm" value={manualProd.name} onChange={e => setManualProd({...manualProd, name: e.target.value})} />
                                         </div>
                                     </div>
@@ -540,10 +602,6 @@
                                         <div className="flex-1">
                                             <label className="text-[10px] font-bold text-slate-500 uppercase">Categoría</label>
                                             <input type="text" placeholder="VARIOS" className="w-full p-2.5 mt-1 bg-slate-50 rounded-xl border border-slate-200 text-xs" value={manualProd.category} onChange={e => setManualProd({...manualProd, category: e.target.value})} />
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase">Empaque</label>
-                                            <input type="text" placeholder="UNIDAD" className="w-full p-2.5 mt-1 bg-slate-50 rounded-xl border border-slate-200 text-xs" value={manualProd.pack} onChange={e => setManualProd({...manualProd, pack: e.target.value})} />
                                         </div>
                                         <div className="w-1/3">
                                             <label className="text-[10px] font-bold text-blue-600 uppercase">Precio($) *</label>
@@ -557,25 +615,54 @@
                             </form>
                         )}
 
-                        {/* TAB: CARGA MASIVA */}
+                        {/* TAB: CARGA MASIVA (EXCEL PROFESIONAL) */}
                         {adminTab === "BULK" && (
                             <div className="bg-blue-50 p-6 rounded-2xl shadow-sm border border-blue-200 animate-fade-in">
-                                <h2 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-2 flex items-center"><i className="fa-solid fa-cloud-arrow-up mr-2 text-lg text-blue-600"></i> Carga Masiva (Excel)</h2>
+                                <h2 className="text-xs font-black text-blue-900 uppercase tracking-widest mb-2 flex items-center"><i className="fa-solid fa-file-excel mr-2 text-lg text-blue-600"></i> Importar Excel</h2>
                                 
                                 <div className="flex bg-blue-100/50 p-1 rounded-xl mb-4 space-x-1">
                                     <button onClick={() => setUploadMode("APPEND")} className={`flex-1 py-2 text-[10px] font-black rounded-lg transition ${uploadMode === 'APPEND' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-700'}`}>➕ AGREGAR / EDITAR</button>
                                     <button onClick={() => setUploadMode("REPLACE")} className={`flex-1 py-2 text-[10px] font-black rounded-lg transition ${uploadMode === 'REPLACE' ? 'bg-rose-500 text-white shadow-md' : 'text-rose-700'}`}>🔄 REEMPLAZAR TODO</button>
                                 </div>
 
-                                <p className="text-[10px] text-blue-700 font-bold mb-3 leading-tight">
-                                    {uploadMode === "APPEND" 
-                                        ? "Este modo actualizará los precios si el código ya existe, y agregará los nuevos sin borrar lo de otras distribuidoras." 
-                                        : "Este modo BORRARÁ TODO el catálogo actual para dejar solo la lista nueva (Limpieza total)."}
-                                </p>
+                                <div className="text-[10px] text-blue-800 bg-blue-100/50 p-3 rounded-xl mb-4 leading-relaxed font-bold">
+                                    <p className="mb-1 text-blue-900"><i className="fa-solid fa-circle-exclamation mr-1"></i> El Excel debe tener <span className="underline">exactamente 4 columnas</span> en este orden:</p>
+                                    <ul className="list-disc pl-4 font-normal mt-1 space-y-0.5 text-blue-700">
+                                        <li><span className="font-bold">Col A:</span> Código (auto 4 dígitos)</li>
+                                        <li><span className="font-bold">Col B:</span> Descripción del producto</li>
+                                        <li><span className="font-bold">Col C:</span> Categoría</li>
+                                        <li><span className="font-bold">Col D:</span> Precio</li>
+                                    </ul>
+                                </div>
 
-                                <textarea className="w-full p-3 bg-white rounded-xl border border-blue-200 text-[10px] font-mono mb-3 h-32 focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="Pega aquí Código, Nombre, Precio..." value={bulkText} onChange={e => setBulkText(e.target.value)}></textarea>
-                                <button onClick={handleBulkUpload} disabled={isUploading} className={`w-full text-white font-black py-3.5 rounded-xl shadow-md transition ${isUploading ? 'bg-blue-300 cursor-wait' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}>
-                                    {isUploading ? "PROCESANDO LISTA..." : "EJECUTAR ACTUALIZACIÓN"}
+                                <div className="border-2 border-dashed border-blue-300 bg-white rounded-xl p-6 text-center mb-4 hover:bg-blue-50 transition cursor-pointer relative" onClick={() => fileInputRef.current.click()}>
+                                    <input 
+                                        type="file" 
+                                        accept=".xlsx, .xls, .csv" 
+                                        className="hidden" 
+                                        ref={fileInputRef}
+                                        onChange={(e) => setSelectedFile(e.target.files[0])}
+                                    />
+                                    {selectedFile ? (
+                                        <div className="flex flex-col items-center">
+                                            <i className="fa-solid fa-file-circle-check text-4xl text-green-500 mb-2"></i>
+                                            <p className="text-sm font-bold text-slate-800">{selectedFile.name}</p>
+                                            <p className="text-[10px] text-slate-500 mt-1">Clic para cambiar archivo</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center pointer-events-none">
+                                            <i className="fa-solid fa-file-excel text-4xl text-blue-400 mb-2"></i>
+                                            <p className="text-xs font-bold text-slate-600">Haz clic para buscar tu archivo Excel</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button onClick={handleExcelUpload} disabled={isUploading || !selectedFile} className={`w-full text-white font-black py-3.5 rounded-xl shadow-md transition ${isUploading ? 'bg-blue-300 cursor-wait' : (!selectedFile ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95')}`}>
+                                    {isUploading ? (
+                                        <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> GUARDANDO EN NUBE...</>
+                                    ) : (
+                                        <><i className="fa-solid fa-cloud-arrow-up mr-2"></i> INICIAR IMPORTACIÓN</>
+                                    )}
                                 </button>
                             </div>
                         )}
