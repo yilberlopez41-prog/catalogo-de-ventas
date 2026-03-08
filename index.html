@@ -127,7 +127,7 @@
             );
         }
 
-        // --- PANEL ADMINISTRADOR (DISEÑO RESTAURADO) ---
+        // --- PANEL ADMINISTRADOR COMPLETO ---
         function AdminPanel({ setView, products, config, vendorId, user }) {
             const [tab, setTab] = useState("productos");
             const [newProd, setNewProd] = useState({ code: "", category: "", name: "", price: "" });
@@ -220,7 +220,6 @@
 
             return (
                 <div className="min-h-screen bg-slate-100 flex flex-col z-50 absolute inset-0">
-                    {/* Encabezado negro como en la foto */}
                     <header className="bg-slate-900 text-white p-5 flex justify-between items-center shadow-md">
                         <div>
                             <h1 className="font-black text-sm uppercase tracking-wide">Panel Admin</h1>
@@ -231,7 +230,7 @@
                         </button>
                     </header>
 
-                    {/* Menú de pestañas */}
+                    {/* LAS PESTAÑAS QUE FALTABAN */}
                     <div className="flex bg-white shadow-sm text-[10px] font-black uppercase overflow-x-auto">
                         <button onClick={() => setTab("productos")} className={`flex-1 px-4 py-4 whitespace-nowrap ${tab === 'productos' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>Productos</button>
                         <button onClick={() => setTab("config")} className={`flex-1 px-4 py-4 whitespace-nowrap ${tab === 'config' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>Ajustes</button>
@@ -241,7 +240,6 @@
                     <main className="p-4 flex-1 pb-10">
                         {tab === "productos" && (
                             <div className="space-y-4">
-                                {/* Formulario Nuevo Producto (Diseño Foto) */}
                                 <form onSubmit={addProduct} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
                                     <h2 className="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest">Nuevo Producto</h2>
                                     <div className="flex gap-3 mb-3">
@@ -253,7 +251,6 @@
                                     <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black text-xs py-3.5 rounded-2xl uppercase tracking-widest transition">Guardar Producto</button>
                                 </form>
 
-                                {/* Carga Masiva (Diseño Foto) */}
                                 <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 text-center flex flex-col items-center">
                                     <h2 className="text-[9px] font-black text-slate-400 uppercase mb-3">Carga Masiva Excel</h2>
                                     <input type="file" id="excel-upload" accept=".xlsx, .xls" onChange={handleExcelUpload} ref={fileInputRef} className="hidden" />
@@ -263,7 +260,6 @@
                                     </div>
                                 </div>
 
-                                {/* Lista de Productos (Diseño Foto) */}
                                 <div className="space-y-3">
                                     <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Lista de Productos ({products.length})</h2>
                                     {products.map(p => (
