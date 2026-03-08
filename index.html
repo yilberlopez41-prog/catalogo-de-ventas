@@ -28,6 +28,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Configuración de Firebase (Mantenida la tuya original)
         const firebaseConfig = {
           apiKey: "AIzaSyBdaejVklzmuQF5wpEECmtIy5Rv6lSDce8",
           authDomain: "catalogo-vendedores-freelance.firebaseapp.com",
@@ -41,8 +42,10 @@
         const db = firebase.firestore();
         const auth = firebase.auth();
 
+        // Función para normalizar texto (búsquedas sin tildes)
         const normalize = (t) => t ? t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
 
+        // --- COMPONENTE PRINCIPAL ---
         function App() {
             const params = new URLSearchParams(window.location.search);
             const vendorId = (params.get('v') || 'ventas').toLowerCase();
@@ -53,6 +56,7 @@
             const [config, setConfig] = useState({ tasa_bcv: 1, vendorName: "Cargando...", whatsapp: "", adminEmail: "" });
             const [user, setUser] = useState(null);
 
+            // Cargar datos en tiempo real
             useEffect(() => {
                 const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
 
@@ -116,49 +120,53 @@
                         <form onSubmit={isReset ? handleReset : handleLogin} className="space-y-4">
                             <input type="email" placeholder="Correo electrónico" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm" value={email} onChange={e=>setEmail(e.target.value)} required />
                             {!isReset && <input type="password" placeholder="Contraseña" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm" value={password} onChange={e=>setPassword(e.target.value)} required />}
-                            <button type="submit" className="w-full bg-blue-500 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">{isReset ? 'Enviar Link' : 'Ingresar'}</button>
+                            <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 transition text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">{isReset ? 'Enviar Link' : 'Ingresar'}</button>
                         </form>
                         <div className="mt-6 flex justify-between text-[10px] font-bold text-slate-500 uppercase">
-                            <button onClick={() => setIsReset(!isReset)}>{isReset ? 'Volver al Login' : 'Olvidé mi clave'}</button>
-                            <button onClick={() => setView("catalog")}>Cancelar</button>
+                            <button onClick={() => setIsReset(!isReset)} className="hover:text-blue-500">{isReset ? 'Volver al Login' : 'Olvidé mi clave'}</button>
+                            <button onClick={() => setView("catalog")} className="hover:text-blue-500">Cancelar</button>
                         </div>
                     </div>
                 </div>
             );
         }
 
-        // --- PANEL ADMINISTRADOR COMPLETO ---
+        // --- PANEL ADMINISTRADOR (ACTUALIZADO CON PESTAÑAS) ---
         function AdminPanel({ setView, products, config, vendorId, user }) {
             const [tab, setTab] = useState("productos");
             const [newProd, setNewProd] = useState({ code: "", category: "", name: "", price: "" });
+            
             const [editConfig, setEditConfig] = useState({ 
                 tasa_bcv: config.tasa_bcv || "", 
                 vendorName: config.vendorName || "", 
                 whatsapp: config.whatsapp || "",
                 adminEmail: config.adminEmail || "" 
             });
+            
             const [selectedLinkCat, setSelectedLinkCat] = useState("");
             const [fileName, setFileName] = useState("Ningún archivo seleccionado");
             const fileInputRef = useRef(null);
 
+            // Obtener categorías únicas
             const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
 
             if (!user) { setView("login"); return null; }
 
-            // Seguridad
+            // Seguridad por correo
             if (config.adminEmail && user.email.toLowerCase() !== config.adminEmail.toLowerCase()) {
                 return (
                     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center z-50 absolute inset-0">
                         <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl">
                             <i className="fa-solid fa-shield-halved text-rose-500 text-5xl mb-4"></i>
                             <h2 className="text-xl font-black text-slate-800 uppercase mb-2">Acceso Denegado</h2>
-                            <p className="text-xs text-slate-500 mb-6">Tu correo <b>{user.email}</b> no tiene permisos en esta tienda.</p>
+                            <p className="text-xs text-slate-500 mb-6">Tu correo <b>{user.email}</b> no tiene permisos.</p>
                             <button onClick={() => { auth.signOut(); setView("catalog"); }} className="w-full bg-slate-900 text-white font-black py-4 rounded-xl uppercase text-xs">Salir al Catálogo</button>
                         </div>
                     </div>
                 );
             }
 
+            // Funciones de Base de Datos
             const addProduct = async (e) => {
                 e.preventDefault();
                 await db.collection('vendors').doc(vendorId).collection('products').add({
@@ -169,10 +177,7 @@
 
             const handleExcelUpload = (e) => {
                 const file = e.target.files[0];
-                if (!file) {
-                    setFileName("Ningún archivo seleccionado");
-                    return;
-                }
+                if (!file) { setFileName("Ningún archivo seleccionado"); return; }
                 setFileName(file.name);
                 
                 const reader = new FileReader();
@@ -201,21 +206,32 @@
             const toggleVisibility = async (id, currentStatus) => {
                 await db.collection('vendors').doc(vendorId).collection('products').doc(id).update({ isActive: !currentStatus });
             };
+
             const updatePrice = async (id, oldPrice) => {
                 const newPrice = prompt("Nuevo precio en $: ", oldPrice);
                 if (newPrice && !isNaN(newPrice)) {
                     await db.collection('vendors').doc(vendorId).collection('products').doc(id).update({ price: parseFloat(newPrice) });
                 }
             };
+
             const deleteProduct = async (id) => {
                 if(window.confirm("¿Eliminar este producto?")) await db.collection('vendors').doc(vendorId).collection('products').doc(id).delete();
             };
+
+            // Función para guardar ajustes
             const saveConfig = async (e) => {
                 e.preventDefault();
-                await db.collection('vendors').doc(vendorId).collection('config').doc('general').set({
-                    vendorName: editConfig.vendorName, whatsapp: editConfig.whatsapp, tasa_bcv: parseFloat(editConfig.tasa_bcv), adminEmail: editConfig.adminEmail.trim().toLowerCase()
-                });
-                alert("✅ Ajustes guardados.");
+                try {
+                    await db.collection('vendors').doc(vendorId).collection('config').doc('general').set({
+                        vendorName: editConfig.vendorName, 
+                        whatsapp: editConfig.whatsapp, 
+                        tasa_bcv: parseFloat(editConfig.tasa_bcv), 
+                        adminEmail: editConfig.adminEmail.trim().toLowerCase()
+                    }, { merge: true });
+                    alert("✅ Ajustes guardados correctamente.");
+                } catch (error) {
+                    alert("❌ Error al guardar: " + error.message);
+                }
             };
 
             return (
@@ -226,27 +242,29 @@
                             <p className="text-[10px] text-blue-400 font-bold uppercase">{user.email}</p>
                         </div>
                         <button onClick={() => { setView("catalog"); }} className="text-[10px] font-black text-white uppercase flex items-center gap-2">
-                            <i className="fa-solid fa-store"></i> Ver Tienda <i onClick={(e)=>{e.stopPropagation(); auth.signOut(); setView("catalog");}} className="fa-solid fa-power-off text-rose-500 ml-1 text-base"></i>
+                            <i className="fa-solid fa-store"></i> Tienda <i onClick={(e)=>{e.stopPropagation(); auth.signOut(); setView("catalog");}} className="fa-solid fa-power-off text-rose-500 ml-1 text-base"></i>
                         </button>
                     </header>
 
-                    {/* LAS PESTAÑAS QUE FALTABAN */}
+                    {/* Navegación de Pestañas */}
                     <div className="flex bg-white shadow-sm text-[10px] font-black uppercase overflow-x-auto">
-                        <button onClick={() => setTab("productos")} className={`flex-1 px-4 py-4 whitespace-nowrap ${tab === 'productos' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>Productos</button>
-                        <button onClick={() => setTab("config")} className={`flex-1 px-4 py-4 whitespace-nowrap ${tab === 'config' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>Ajustes</button>
-                        <button onClick={() => setTab("links")} className={`flex-1 px-4 py-4 whitespace-nowrap ${tab === 'links' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400'}`}>Links</button>
+                        <button onClick={() => setTab("productos")} className={`flex-1 px-4 py-4 whitespace-nowrap transition ${tab === 'productos' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-400'}`}>Productos</button>
+                        <button onClick={() => setTab("config")} className={`flex-1 px-4 py-4 whitespace-nowrap transition ${tab === 'config' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-400'}`}>Ajustes</button>
+                        <button onClick={() => setTab("links")} className={`flex-1 px-4 py-4 whitespace-nowrap transition ${tab === 'links' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-400'}`}>Links</button>
                     </div>
 
-                    <main className="p-4 flex-1 pb-10">
+                    <main className="p-4 flex-1 pb-10 overflow-y-auto">
+                        
+                        {/* PESTAÑA 1: PRODUCTOS */}
                         {tab === "productos" && (
-                            <div className="space-y-4">
+                            <div className="space-y-4 animate-fade">
                                 <form onSubmit={addProduct} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
                                     <h2 className="text-[10px] font-black text-blue-600 uppercase mb-4 tracking-widest">Nuevo Producto</h2>
                                     <div className="flex gap-3 mb-3">
                                         <input type="text" placeholder="Código" className="w-1/3 p-3 bg-slate-50 rounded-xl text-xs" value={newProd.code} onChange={e=>setNewProd({...newProd, code: e.target.value})} />
-                                        <input type="text" placeholder="Categoría (Ej: Licores)" className="w-2/3 p-3 bg-slate-50 rounded-xl text-xs" value={newProd.category} onChange={e=>setNewProd({...newProd, category: e.target.value})} />
+                                        <input type="text" placeholder="Categoría" className="w-2/3 p-3 bg-slate-50 rounded-xl text-xs" value={newProd.category} onChange={e=>setNewProd({...newProd, category: e.target.value})} />
                                     </div>
-                                    <input type="text" placeholder="Descripción / Nombre *" className="w-full p-3 bg-slate-50 rounded-xl text-xs mb-3" value={newProd.name} onChange={e=>setNewProd({...newProd, name: e.target.value})} required />
+                                    <input type="text" placeholder="Nombre *" className="w-full p-3 bg-slate-50 rounded-xl text-xs mb-3" value={newProd.name} onChange={e=>setNewProd({...newProd, name: e.target.value})} required />
                                     <input type="number" step="0.01" placeholder="Precio ($) *" className="w-full p-3 bg-slate-50 rounded-xl text-xs mb-5" value={newProd.price} onChange={e=>setNewProd({...newProd, price: e.target.value})} required />
                                     <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black text-xs py-3.5 rounded-2xl uppercase tracking-widest transition">Guardar Producto</button>
                                 </form>
@@ -280,36 +298,44 @@
                             </div>
                         )}
 
-                        {/* PESTAÑA AJUSTES */}
+                        {/* PESTAÑA 2: AJUSTES */}
                         {tab === "config" && (
-                            <form onSubmit={saveConfig} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tasa de Cambio (BS)</label><input type="number" step="0.01" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.tasa_bcv} onChange={e=>setEditConfig({...editConfig, tasa_bcv: e.target.value})} /></div>
-                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre Vendedor</label><input type="text" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.vendorName} onChange={e=>setEditConfig({...editConfig, vendorName: e.target.value})} /></div>
-                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp (Ej: 58412...)</label><input type="text" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.whatsapp} onChange={e=>setEditConfig({...editConfig, whatsapp: e.target.value})} /></div>
+                            <form onSubmit={saveConfig} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4 animate-fade">
+                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tasa de Cambio (BS)</label><input type="number" step="0.01" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.tasa_bcv} onChange={e=>setEditConfig({...editConfig, tasa_bcv: e.target.value})} required/></div>
+                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre Vendedor</label><input type="text" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.vendorName} onChange={e=>setEditConfig({...editConfig, vendorName: e.target.value})} required/></div>
+                                <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp (Ej: 58412...)</label><input type="text" className="w-full p-4 mt-1 bg-slate-50 rounded-xl font-bold border-none" value={editConfig.whatsapp} onChange={e=>setEditConfig({...editConfig, whatsapp: e.target.value})} required/></div>
                                 <div className="pt-4 border-t border-slate-100">
-                                    <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest"><i className="fa-solid fa-shield-halved"></i> Correo Administrador</label>
-                                    <p className="text-[9px] text-slate-400 mb-2 leading-tight">Solo este correo editará este catálogo.</p>
-                                    <input type="email" placeholder="ejemplo@correo.com" className="w-full p-4 bg-blue-50 rounded-xl font-bold border border-blue-100 text-blue-900" value={editConfig.adminEmail} onChange={e=>setEditConfig({...editConfig, adminEmail: e.target.value})} />
+                                    <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest"><i className="fa-solid fa-shield-halved"></i> Correo Admin</label>
+                                    <input type="email" placeholder="ejemplo@correo.com" className="w-full p-4 mt-1 bg-blue-50 rounded-xl font-bold border border-blue-100 text-blue-900" value={editConfig.adminEmail} onChange={e=>setEditConfig({...editConfig, adminEmail: e.target.value})} required/>
                                 </div>
-                                <button type="submit" className="w-full bg-blue-500 text-white font-black text-xs py-4 rounded-2xl uppercase tracking-widest mt-4">Guardar Ajustes</button>
+                                <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black text-xs py-4 rounded-2xl uppercase tracking-widest mt-4">Guardar Ajustes</button>
                             </form>
                         )}
 
-                        {/* PESTAÑA LINKS */}
+                        {/* PESTAÑA 3: LINKS */}
                         {tab === "links" && (
-                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                <h2 className="text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Compartir Catálogo Filtrado</h2>
-                                <p className="text-xs text-slate-500 mb-4 font-bold">Selecciona una categoría para generar un link exclusivo para tu cliente.</p>
+                            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 animate-fade">
+                                <h2 className="text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Link de Categoría</h2>
                                 <select className="w-full p-4 bg-slate-50 border-none rounded-xl mb-4 text-xs font-bold uppercase" value={selectedLinkCat} onChange={e => setSelectedLinkCat(e.target.value)}>
-                                    <option value="">Todas las categorías (General)</option>
+                                    <option value="">Todo (Catálogo General)</option>
                                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <button onClick={() => {
-                                    let url = window.location.origin + '?v=' + vendorId;
-                                    if(selectedLinkCat) url += '&c=' + encodeURIComponent(selectedLinkCat);
-                                    navigator.clipboard.writeText(url);
-                                    alert("✅ Link copiado al portapapeles:\n" + url);
-                                }} className="w-full bg-slate-800 text-white font-black text-xs py-4 rounded-2xl uppercase tracking-widest">Generar y Copiar Link</button>
+                                
+                                <div className="flex flex-col gap-3">
+                                    <button onClick={() => {
+                                        let url = window.location.origin + window.location.pathname + '?v=' + vendorId;
+                                        if(selectedLinkCat) url += '&c=' + encodeURIComponent(selectedLinkCat);
+                                        navigator.clipboard.writeText(url);
+                                        alert("✅ Link copiado:\n" + url);
+                                    }} className="w-full bg-slate-800 text-white font-black text-xs py-4 rounded-xl uppercase tracking-widest"><i className="fa-solid fa-copy mr-2"></i> Copiar Link</button>
+                                    
+                                    <button onClick={() => {
+                                        let url = window.location.origin + window.location.pathname + '?v=' + vendorId;
+                                        if(selectedLinkCat) url += '&c=' + encodeURIComponent(selectedLinkCat);
+                                        const msg = `¡Hola! Mira nuestro catálogo digital aquí: ${url}`;
+                                        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                                    }} className="w-full bg-green-500 text-white font-black text-xs py-4 rounded-xl uppercase tracking-widest"><i className="fa-brands fa-whatsapp mr-2"></i> Enviar por WhatsApp</button>
+                                </div>
                             </div>
                         )}
                     </main>
@@ -317,7 +343,7 @@
             );
         }
 
-        // --- TIENDA Y CARRITO ---
+        // --- TIENDA Y CARRITO (MANTENIDA LA TUYA ORIGINAL CON FILTRO APLICADO) ---
         function Storefront({ view, setView, products, config, categoryFilter }) {
             const [search, setSearch] = useState("");
             const [cart, setCart] = useState([]);
@@ -353,7 +379,7 @@
                         </div>
                         {view === "catalog" && (
                             <div>
-                                {categoryFilter && <p className="text-[9px] text-blue-400 font-bold uppercase mb-2 bg-blue-900/30 inline-block px-2 py-1 rounded">Filtro: {categoryFilter}</p>}
+                                {categoryFilter && <p className="text-[9px] text-blue-400 font-bold uppercase mb-2 bg-blue-900/30 inline-block px-2 py-1 rounded">Viendo: {categoryFilter}</p>}
                                 <input type="text" placeholder="Buscar producto..." className="w-full px-4 py-2.5 rounded-xl bg-slate-800 text-sm border-none text-white focus:ring-2 focus:ring-blue-500" value={search} onChange={e => setSearch(e.target.value)} />
                             </div>
                         )}
