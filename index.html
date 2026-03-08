@@ -1,7 +1,38 @@
-<script type="text/babel">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Catálogo Pro | Freelance</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .animate-fade { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root">
+        <div class="flex items-center justify-center min-h-screen text-slate-400 text-xs uppercase tracking-widest font-black">
+            Iniciando Sistema...
+        </div>
+    </div>
+
+    <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // CONFIGURACIÓN DE FIREBASE (Verificada)
+        // CONFIGURACIÓN (Asegúrate de que estos datos sean correctos)
         const firebaseConfig = {
           apiKey: "AIzaSyBdaejVklzmuQF5wpEECmtIy5Rv6lSDce8",
           authDomain: "catalogo-vendedores-freelance.firebaseapp.com",
@@ -11,174 +42,96 @@
           appId: "1:994101056111:web:ee05a0d7f1810e2964739a"
         };
 
+        // Inicialización segura
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
 
-        const normalize = (t) => t ? t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
-
         function App() {
             const params = new URLSearchParams(window.location.search);
-            const vendorId = params.get('v') || 'ventas'; 
+            const vendorId = params.get('v') || 'ventas';
 
             const [view, setView] = useState("catalog");
             const [products, setProducts] = useState([]);
-            const [config, setConfig] = useState({ tasa_bcv: 1, vendorName: "CARGANDO...", whatsapp: "" });
-            const [loading, setLoading] = useState(true);
-            const [user, setUser] = useState(null);
+            const [config, setConfig] = useState({ tasa_bcv: 1, vendorName: "Cargando...", whatsapp: "" });
+            const [error, setError] = useState(null);
 
             useEffect(() => {
-                auth.onAuthStateChanged(u => setUser(u));
-                
-                // CARGA CONFIGURACIÓN: vendors > ventas > config > general
+                // 1. Cargar Configuración
                 const unsubConfig = db.collection('vendors').doc(vendorId).collection('config').doc('general')
                     .onSnapshot(doc => {
                         if (doc.exists) {
-                            setConfig(prev => ({ ...prev, ...doc.data() }));
+                            setConfig(doc.data());
+                        } else {
+                            setError(`No existe el vendedor: ${vendorId}`);
                         }
-                    });
+                    }, err => setError("Error de conexión con Firebase"));
 
-                // CARGA PRODUCTOS
+                // 2. Cargar Productos
                 const unsubProd = db.collection('vendors').doc(vendorId).collection('products')
                     .onSnapshot(snap => {
                         const items = [];
                         snap.forEach(d => items.push({ id: d.id, ...d.data() }));
                         setProducts(items);
-                        setLoading(false);
                     });
 
-                return () => { unsubConfig(); unsubProd(); }
+                return () => { unsubConfig(); unsubProd(); };
             }, [vendorId]);
 
-            return (
-                <div className="max-w-md mx-auto relative min-h-screen bg-white shadow-2xl overflow-hidden font-sans">
-                    {view === "login" && <LoginScreen setView={setView} />}
-                    {view === "admin" && (user ? <AdminPanel setView={setView} products={products} config={config} vendorId={vendorId} /> : <LoginScreen setView={setView} />)}
-                    {(view === "catalog" || view === "cart") && <Storefront view={view} setView={setView} products={products} config={config} />}
+            if (error) return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-10 text-center">
+                    <i className="fa-solid fa-triangle-exclamation text-rose-500 text-3xl mb-4"></i>
+                    <p className="text-sm font-bold text-slate-800 uppercase tracking-tighter">{error}</p>
+                    <p className="text-[10px] text-slate-400 mt-2 uppercase">Revisa la estructura en Firestore</p>
                 </div>
             );
-        }
-
-        function Storefront({ view, setView, products, config }) {
-            const [search, setSearch] = useState("");
-            const [cart, setCart] = useState([]);
-            const [client, setClient] = useState({ name: "", addr: "" });
-
-            const filtered = products.filter(p => p.isActive !== false && normalize(p.name).includes(normalize(search)));
-            const total = cart.reduce((s, i) => s + (i.p.price * i.qty), 0);
-
-            // LOGICA DE CARRITO CORREGIDA
-            const updateQty = (p, delta) => {
-                const existing = cart.find(item => item.p.id === p.id);
-                if (existing) {
-                    const newQty = existing.qty + delta;
-                    if (newQty <= 0) {
-                        setCart(cart.filter(item => item.p.id !== p.id));
-                    } else {
-                        setCart(cart.map(item => item.p.id === p.id ? { ...item, qty: newQty } : item));
-                    }
-                } else if (delta > 0) {
-                    setCart([...cart, { p, qty: 1 }]);
-                }
-            };
 
             return (
-                <div className="flex flex-col min-h-screen animate-fade-in bg-slate-50">
-                    <header className="bg-slate-900 text-white p-5 sticky top-0 z-20 shadow-xl border-b border-slate-800">
-                        <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <h1 className="text-xs font-black uppercase text-blue-400 tracking-wider">{config.vendorName}</h1>
-                                <p className="text-[10px] font-bold text-slate-400">TASA: BS {Number(config.tasa_bcv).toFixed(2)}</p>
-                            </div>
-                            <button onClick={() => setView(view === 'catalog' ? 'cart' : 'catalog')} className="bg-slate-800 p-3 rounded-xl relative border border-slate-700">
-                                <i className={`fa-solid ${view === 'catalog' ? 'fa-cart-shopping' : 'fa-arrow-left'}`}></i>
-                                {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-rose-500 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">{cart.length}</span>}
-                            </button>
-                        </div>
-                        {view === "catalog" && (
-                            <div className="relative">
-                                <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
-                                <input type="text" placeholder="Buscar producto..." className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800 text-sm border-none text-white focus:ring-2 focus:ring-blue-500" value={search} onChange={e => setSearch(e.target.value)} />
-                            </div>
-                        )}
+                <div className="max-w-md mx-auto min-h-screen bg-white shadow-2xl animate-fade">
+                    <header className="bg-slate-900 text-white p-5 sticky top-0 z-30 shadow-lg">
+                        <h1 className="text-xs font-black uppercase text-blue-400 tracking-widest">{config.vendorName}</h1>
+                        <p className="text-[10px] font-bold text-slate-500 mt-1">TASA: BS {Number(config.tasa_bcv).toFixed(2)}</p>
                     </header>
+                    
+                    <main className="p-4">
+                        <div className="bg-blue-600 p-8 rounded-[2rem] text-white text-center shadow-xl mb-6">
+                            <i className="fa-solid fa-check-double text-3xl mb-3"></i>
+                            <h2 className="font-black uppercase text-xs tracking-widest">App Conectada</h2>
+                            <p className="text-[10px] opacity-70 mt-2">Ya puedes empezar a cargar productos</p>
+                        </div>
 
-                    <main className="p-4 flex-1 pb-32">
-                        {view === "catalog" ? (
-                            <div className="space-y-3">
-                                {filtered.map(p => {
-                                    const itemInCart = cart.find(i => i.p.id === p.id);
-                                    return (
-                                        <div key={p.id} className={`bg-white p-4 rounded-2xl flex items-center justify-between shadow-sm transition-all border ${itemInCart ? 'border-blue-400 bg-blue-50/20' : 'border-slate-100'}`}>
-                                            <div className="flex-1 pr-3 truncate">
-                                                <p className="text-[9px] font-black text-blue-600 uppercase mb-1">{p.category}</p>
-                                                <h3 className="text-xs font-bold text-slate-800 uppercase truncate leading-tight">{p.name}</h3>
-                                                <p className="text-lg font-black text-slate-950 mt-1">${Number(p.price).toFixed(2)}</p>
-                                            </div>
-                                            
-                                            {/* SELECTOR DE CANTIDAD ESTILO SCROLL */}
-                                            {itemInCart ? (
-                                                <div className="flex items-center bg-white rounded-xl shadow-md border border-slate-200 p-1">
-                                                    <button onClick={() => updateQty(p, -1)} className="w-8 h-8 flex items-center justify-center text-blue-600 active:scale-90"><i className="fa-solid fa-minus text-xs"></i></button>
-                                                    <span className="w-10 text-center font-black text-sm text-slate-900 border-x border-slate-100">{itemInCart.qty}</span>
-                                                    <button onClick={() => updateQty(p, 1)} className="w-8 h-8 flex items-center justify-center text-blue-600 active:scale-90"><i className="fa-solid fa-plus text-xs"></i></button>
-                                                </div>
-                                            ) : (
-                                                <button onClick={() => updateQty(p, 1)} className="bg-slate-900 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition"><i className="fa-solid fa-cart-plus"></i></button>
-                                            )}
-                                        </div>
-                                    )
-                                })}
+                        {products.length === 0 ? (
+                            <div className="text-center py-10 opacity-30 uppercase font-black text-[10px] tracking-widest">
+                                <i className="fa-solid fa-box-open text-2xl mb-2 block"></i>
+                                Sin productos en lista
                             </div>
                         ) : (
-                            /* Vista de Carrito y Envío */
-                            <div className="space-y-4">
-                                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-                                    <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Datos del Cliente</h2>
-                                    <input type="text" placeholder="Tu Nombre *" className="w-full p-4 mb-3 bg-slate-50 rounded-2xl text-sm font-bold border-none" value={client.name} onChange={e => setClient({...client, name: e.target.value})} />
-                                    <input type="text" placeholder="Dirección" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border-none" value={client.addr} onChange={e => setClient({...client, addr: e.target.value})} />
-                                </div>
-                                <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100">
-                                    <div className="p-4 space-y-3">
-                                        {cart.map(i => (
-                                            <div key={i.p.id} className="flex justify-between items-center text-xs pb-3 border-b border-slate-50 last:border-none last:pb-0">
-                                                <div><p className="font-bold uppercase text-slate-800">{i.p.name}</p><p className="text-blue-600 font-black">CANT: {i.qty}</p></div>
-                                                <p className="font-black text-slate-950">${(i.p.price * i.qty).toFixed(2)}</p>
-                                            </div>
-                                        ))}
+                            <div className="space-y-3">
+                                {products.map(p => (
+                                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
+                                        <span className="text-xs font-bold uppercase">{p.name}</span>
+                                        <span className="font-black text-blue-600">${Number(p.price).toFixed(2)}</span>
                                     </div>
-                                    <div className="p-6 bg-slate-900 text-white text-center">
-                                        <p className="text-3xl font-black mb-1">${total.toFixed(2)}</p>
-                                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-6">Ref: Bs {(total * config.tasa_bcv).toFixed(2)}</p>
-                                        <button onClick={() => {
-                                            if(!client.name) return alert("Indica el nombre del cliente.");
-                                            let msg = `🛍️ *PEDIDO: ${client.name}*\n\n`;
-                                            cart.forEach(i => msg += `✅ *${i.qty}x ${i.p.name}* ($${(i.p.price*i.qty).toFixed(2)})\n`);
-                                            msg += `\n💰 *TOTAL: $${total.toFixed(2)}*\n🇻🇪 _(Ref: Bs ${(total * config.tasa_bcv).toFixed(2)})_`;
-                                            window.open(`https://wa.me/${config.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`,'_blank');
-                                        }} className="w-full bg-blue-600 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition">Enviar a WhatsApp</button>
-                                    </div>
-                                </div>
+                                ))}
                             </div>
                         )}
                     </main>
 
-                    {view === "catalog" && cart.length > 0 && (
-                        <div className="fixed bottom-6 w-full max-w-md px-4 z-30">
-                            <button onClick={() => setView("cart")} className="w-full bg-slate-900 text-white rounded-2xl shadow-2xl p-4 flex justify-between items-center border border-slate-700 active:scale-95 transition">
-                                <span className="font-black text-[10px] uppercase tracking-widest"><span className="bg-blue-600 px-2 py-1 rounded-lg mr-2">{cart.length}</span> Ver Carrito</span>
-                                <span className="font-black text-xl">${total.toFixed(2)}</span>
-                            </button>
-                        </div>
-                    )}
+                    <footer className="fixed bottom-0 w-full max-w-md p-6 bg-white/80 backdrop-blur-md border-t border-slate-100 flex justify-center">
+                        <button onDoubleClick={() => auth.currentUser ? setView("admin") : setView("login")} className="text-slate-200">
+                            <i className="fa-solid fa-gear"></i>
+                        </button>
+                    </footer>
                 </div>
             );
         }
 
-        // ... (Login y Admin Panel se mantienen igual que en versiones anteriores) ...
-        function LoginScreen({ setView }) { /* ... */ }
-        function AdminPanel({ setView, products, config, vendorId }) { /* ... */ }
+        // Vistas de soporte básicas para la prueba
+        function LoginScreen({ setView }) { return <div className="p-10 text-center uppercase font-black text-xs">Pantalla de Login</div>; }
+        function AdminPanel({ setView }) { return <div className="p-10 text-center uppercase font-black text-xs">Panel Administrativo</div>; }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
+</body>
+</html>
