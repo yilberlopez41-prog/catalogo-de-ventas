@@ -55,7 +55,7 @@
             const [config, setConfig] = useState({ tasa_bcv: 1, vendorName: "Cargando...", whatsapp: "", adminEmail: "" });
             const [user, setUser] = useState(null);
 
-            useEffect(() => {
+           useEffect(() => {
                 const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
 
                 const unsubConfig = db.collection('vendors').doc(vendorId).collection('config').doc('general')
@@ -65,12 +65,14 @@
                     .onSnapshot(snap => {
                         const items = [];
                         snap.forEach(d => items.push({ id: d.id, ...d.data() }));
-                        setProducts(items.sort((a,b) => (a.code || "").localeCompare(b.code || "")));
+                        // ✨ AQUÍ ESTÁ LA CORRECCIÓN: Envolvemos los códigos en String()
+                        setProducts(items.sort((a,b) => String(a.code || "").localeCompare(String(b.code || ""))));
+                    }, error => {
+                        console.error("Error de Firebase:", error);
                     });
 
                 return () => { unsubAuth(); unsubConfig(); unsubProd(); };
             }, [vendorId]);
-
             return (
                 <div className="max-w-md mx-auto min-h-screen bg-slate-50 shadow-2xl animate-fade overflow-hidden relative">
                     {(view === "catalog" || view === "cart") && <Storefront view={view} setView={setView} products={products} config={config} categoryFilter={catParam} />}
